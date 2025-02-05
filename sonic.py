@@ -23,6 +23,8 @@ from src.dataset.face_align.align import AlignImage
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+
+# 이 부분이 inference run하는 함수
 def test(
     pipe,
     config,
@@ -136,7 +138,7 @@ class Sonic():
 
         device = 'cuda:{}'.format(device_id) if device_id > -1 else 'cpu'
 
-        config.pretrained_model_name_or_path = os.path.join(BASE_DIR, config.pretrained_model_name_or_path)
+        # config.pretrained_model_name_or_path = os.path.join(BASE_DIR, config.pretrained_model_name_or_path)
 
         vae = AutoencoderKLTemporalDecoder.from_pretrained(
             config.pretrained_model_name_or_path, 
