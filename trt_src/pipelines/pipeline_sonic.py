@@ -98,9 +98,6 @@ class SonicPipeline(StableDiffusionPipeline):
             pipeline_type=pipeline_type,
             **kwargs
         )
-        # self.min_guidance_scale = min_guidance_scale
-        # self.max_guidance_scale = max_guidance_scale
-        # self.do_classifier_free_guidance = max_guidance_scale > 1
         self.do_classifier_free_guidance = True
         # FIXME vae_scale_factor = 2 ** (len(self.vae.config.block_out_channels) - 1)
         self.vae_scale_factor = 8
@@ -676,11 +673,6 @@ class SonicPipeline(StableDiffusionPipeline):
         # Release model opportunistically in TensorRT pipeline only in low VRAM mode
         release_model = self.low_vram and not self.torch_inference
         with torch.inference_mode(), torch.autocast("cuda"), trt.Runtime(TRT_LOGGER):
-            # with LoadModelContext('clip-imgfe', release_model=release_model), LoadModelContext('clip-vis', release_model=release_model):
-            #     self.profile_start('clip', color='green')
-            #     image_embeddings = self._encode_image(input_image, num_videos_per_prompt, self.do_classifier_free_guidance)
-            #     self.profile_stop('clip')
-
             with LoadModelContext('clip-vis', release_model=release_model):
                 self.profile_start('clip', color='green')
                 image_embeddings, audio_prompts = self._clip_encode_image(
@@ -739,18 +731,6 @@ class SonicPipeline(StableDiffusionPipeline):
             image_latents = image_latents.unsqueeze(1).repeat(1, self.num_frames, 1, 1, 1)
             motion_buckets = motion_buckets * motion_bucket_scale
 
-            # # Get Added Time IDs
-            # added_time_ids = self._get_add_time_ids(
-            #     fps,
-            #     motion_bucket_id,
-            #     noise_aug_strength,
-            #     image_embeddings.dtype,
-            #     batch_size,
-            #     num_videos_per_prompt,
-            #     self.do_classifier_free_guidance,
-            # )
-            # added_time_ids = added_time_ids.to(self.device)
-
             # Prepare timesteps
             self.scheduler.set_timesteps(denoising_steps, device=self.device)
             # timesteps = self.scheduler.timesteps
@@ -769,7 +749,6 @@ class SonicPipeline(StableDiffusionPipeline):
                 latents,
                 ref_image_latents,
                 timestep=latent_timestep,
-                # None, # pre-generated latents
             ) # ref_image_latents' shape: [1, 4, 64, 64]
 
             # Prepare a list of pose condition images
@@ -790,9 +769,6 @@ class SonicPipeline(StableDiffusionPipeline):
 
             self.guidance_scale1 = guidance_scale1
             self.guidance_scale2 = guidance_scale2
-
-            # guidance_scale = guidance_scale.repeat(batch_size * num_videos_per_prompt, 1)
-            # guidance_scale = _append_dims(guidance_scale, latents.ndim)
 
             # Denoising loop
             # latents_all -> [1, 25, 4, 64, 64]
@@ -916,25 +892,9 @@ class SonicPipeline(StableDiffusionPipeline):
         e2e_toc = time.perf_counter()
         walltime_ms = (e2e_toc - e2e_tic) * 1000.
         self.print_summary(denoising_steps, walltime_ms, batch_size, len(frames[0]))
-        # if save_video:
-        #     self.save_video(frames[0], self.pipeline_type.name.lower(), self.seed)
 
-        return frames #, walltime_ms
+        return frames
 
-    # def run(self, input_image, height, width, batch_size, batch_count, num_warmup_runs, use_cuda_graph, **kwargs):
-    #     num_warmup_runs = max(1, num_warmup_runs) if use_cuda_graph else num_warmup_runs
-    #     if num_warmup_runs > 0:
-    #         print("[I] Warming up ..")
-    #         for _ in range(num_warmup_runs):
-    #             self.infer(input_image, height, width, warmup=True)
-
-    #     for _ in range(batch_count): # batch_count는 디폴트로 1로 지정.
-    #         print("[I] Running StableDiffusion pipeline")
-    #         if self.nvtx_profile:
-    #             cudart.cudaProfilerStart()
-    #         self.infer(input_image, height, width, warmup=False)
-    #         if self.nvtx_profile:
-    #             cudart.cudaProfilerStop()
 
     def run(self, image_encoder, wav_enc, audio_pe, audio2bucket, width, height, batch, batch_count, num_warmup_runs, use_cuda_graph, **kwargs):
         num_warmup_runs = max(1, num_warmup_runs) if use_cuda_graph else num_warmup_runs
@@ -946,9 +906,7 @@ class SonicPipeline(StableDiffusionPipeline):
         ref_img = batch['ref_img']
         clip_img = batch['clip_images']
         face_mask = batch['face_mask']
-        # image_embeds = self.torch_models['clip-vis'](
-        #     clip_img
-        #         ).image_embeds # activate을 call (infer 메소드 안에서 가능함) 해야 torch_models에 모델이 assign이 되는데 이래서 안되는 듯... 이걸 infer 안에서 할 수 있게 하는 게 나을 것 같다
+    
         image_embeds = image_encoder(
             clip_img
         ).image_embeds # 이런 부분도 좋지 못한 부분이긴 함
