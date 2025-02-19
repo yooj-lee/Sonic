@@ -53,28 +53,32 @@ def test(
     window = 3000
     audio_prompts = []
     last_audio_prompts = []
-    for i in range(0, audio_feature.shape[-1], window):
+
+    # audio_feature.shape[-1] = 3000 -> 여기 걍 mel 넣어주는 부분
+    for i in range(0, audio_feature.shape[-1], window): # 결과적으로는 loop을 그냥 안도는 건데?
+        # features from 5 stages
+        # audio_feature: [B,L,D] -> length가 1500, channel의 경우 384
         audio_prompt = wav_enc.encoder(audio_feature[:,:,i:i+window], output_hidden_states=True).hidden_states
-        last_audio_prompt = wav_enc.encoder(audio_feature[:,:,i:i+window]).last_hidden_state
-        last_audio_prompt = last_audio_prompt.unsqueeze(-2)
-        audio_prompt = torch.stack(audio_prompt, dim=2)
+        last_audio_prompt = wav_enc.encoder(audio_feature[:,:,i:i+window]).last_hidden_state # [B,L,D]
+        last_audio_prompt = last_audio_prompt.unsqueeze(-2) # [B,L,1,D]
+        audio_prompt = torch.stack(audio_prompt, dim=2) # B,L,5,D -> [1, 1500, 5, 384]
         audio_prompts.append(audio_prompt)
         last_audio_prompts.append(last_audio_prompt)
 
-    audio_prompts = torch.cat(audio_prompts, dim=1)
-    audio_prompts = audio_prompts[:,:audio_len*2]
-    audio_prompts = torch.cat([torch.zeros_like(audio_prompts[:,:4]), audio_prompts, torch.zeros_like(audio_prompts[:,:6])], 1)
+    audio_prompts = torch.cat(audio_prompts, dim=1) # [1,1500,5,384] -> length 차원으로 concat하는 게 맞는 듯함.
+    audio_prompts = audio_prompts[:,:audio_len*2] # audio_len*2=500; 500까지 자름 -> 그럼 앞에 작업은 왜 하는 거지
+    audio_prompts = torch.cat([torch.zeros_like(audio_prompts[:,:4]), audio_prompts, torch.zeros_like(audio_prompts[:,:6])], 1) # zero-padding 적용 -> 앞 4개 뒤에 6개? -> 1, 510, 5, 384
 
-    last_audio_prompts = torch.cat(last_audio_prompts, dim=1)
-    last_audio_prompts = last_audio_prompts[:,:audio_len*2]
-    last_audio_prompts = torch.cat([torch.zeros_like(last_audio_prompts[:,:24]), last_audio_prompts, torch.zeros_like(last_audio_prompts[:,:26])], 1)
+    last_audio_prompts = torch.cat(last_audio_prompts, dim=1) # [B,L,1,D] -> [1,1500,1,384]
+    last_audio_prompts = last_audio_prompts[:,:audio_len*2] # [1,500,1,384]
+    last_audio_prompts = torch.cat([torch.zeros_like(last_audio_prompts[:,:24]), last_audio_prompts, torch.zeros_like(last_audio_prompts[:,:26])], 1) # [1,550,1,384]
 
 
     ref_tensor_list = []
     audio_tensor_list = []
     uncond_audio_tensor_list = []
     motion_buckets = []
-    for i in tqdm(range(audio_len//step)):
+    for i in tqdm(range(audio_len//step)): # audio_len=250, step=2 -> 그래서 125번 step을 밟게 되는 것임.
 
 
         audio_clip = audio_prompts[:,i*2*step:i*2*step+10].unsqueeze(0)
@@ -229,7 +233,7 @@ class Sonic():
 
         print('init done')
 
-
+    # sonic에서는 얼굴 당 하나씩 talking head를 만들게 되어 있음 -> 어쨌든, process 콜하기 전에 무조건 거치긴 함
     def preprocess(self,
               image_path, expand_ratio=1.0):
         face_image = cv2.imread(image_path)
@@ -248,6 +252,7 @@ class Sonic():
             'crop_bbox': bbox_s,
         }
     
+    # 이것도 process call하기 전에 얼굴 잘라서 pipeline에 call하긴 하는데 그냥 자른 얼굴 이미지 저장하는 코드로 보임
     def crop_image(self,
                    input_image_path,
                    output_image_path,
@@ -310,7 +315,7 @@ class Sonic():
             width=width,
             height=height,
             batch=test_data,
-            )
+            ) # [1,3,125,512,512]
 
         if config.use_interframe:
             rife = self.rife

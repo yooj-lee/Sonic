@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, Union, Any
+from typing import Dict, Optional, Tuple, Union, Any, List
 
 import torch
 import torch.nn as nn
@@ -361,8 +361,8 @@ class UNetSpatioTemporalConditionModel(ModelMixin, ConfigMixin, UNet2DConditionL
         timestep: Union[torch.Tensor, float, int],
         encoder_hidden_states: torch.Tensor,
         added_time_ids: torch.Tensor,
+        ip_adapter_masks: Optional[torch.Tensor] = None,
         spatial_condition: Optional[torch.Tensor] = None,
-        cross_attention_kwargs: Optional[Dict[str, Any]] = None,
         return_dict: bool = True,
     ) -> Union[UNetSpatioTemporalConditionOutput, Tuple]:
         r"""
@@ -403,6 +403,8 @@ class UNetSpatioTemporalConditionModel(ModelMixin, ConfigMixin, UNet2DConditionL
 
         # broadcast to batch dimension in a way that's compatible with ONNX/Core ML
         batch_size, num_frames = sample.shape[:2]
+        # cast to device
+        batch_size, num_frames = batch_size.to(self.device), num_frames.to(self.device)
         timesteps = timesteps.expand(batch_size)
 
         t_emb = self.time_proj(timesteps)
@@ -430,9 +432,13 @@ class UNetSpatioTemporalConditionModel(ModelMixin, ConfigMixin, UNet2DConditionL
         emb = emb.repeat_interleave(num_frames, dim=0)
         # encoder_hidden_states: [batch, 1, channels] -> [batch * frames, 1, channels]
         
-        ### 20240731 process encoder_hidden_states ###
+        # flatten
+        encoder_hidden_states = encoder_hidden_states.flatten(0,1)
+
+        ### 20240731 process encoder_hidden_states ### -> encoder_hidden_states 처리해주는 부분
+        # flatten을 해서 안넘겨준다고 해도 어차피 차원 개수때문에 안맞을 거 같고
         if isinstance(encoder_hidden_states, tuple):
-            # ip_hidden_states is a list
+            # ip_hidden_states is a list -> 왜 굳이 이렇게 해줘야 하지? -> 안에서 for loop 돌아서...
             encoder_hidden_states, ip_hidden_states = encoder_hidden_states
             if encoder_hidden_states.shape[0]==batch_size:
                 encoder_hidden_states = encoder_hidden_states.repeat_interleave(num_frames, dim=0)
@@ -458,7 +464,7 @@ class UNetSpatioTemporalConditionModel(ModelMixin, ConfigMixin, UNet2DConditionL
                     hidden_states=sample,
                     temb=emb,
                     encoder_hidden_states=encoder_hidden_states,
-                    cross_attention_kwargs=cross_attention_kwargs,
+                    ip_adapter_masks=ip_adapter_masks,
                     image_only_indicator=image_only_indicator,
                 )
             else:
@@ -475,7 +481,7 @@ class UNetSpatioTemporalConditionModel(ModelMixin, ConfigMixin, UNet2DConditionL
             hidden_states=sample,
             temb=emb,
             encoder_hidden_states=encoder_hidden_states,
-            cross_attention_kwargs=cross_attention_kwargs,
+            ip_adapter_masks=ip_adapter_masks,
             image_only_indicator=image_only_indicator,
         )
 
@@ -490,7 +496,8 @@ class UNetSpatioTemporalConditionModel(ModelMixin, ConfigMixin, UNet2DConditionL
                     temb=emb,
                     res_hidden_states_tuple=res_samples,
                     encoder_hidden_states=encoder_hidden_states,
-                    cross_attention_kwargs=cross_attention_kwargs,
+                    # cross_attention_kwargs=cross_attention_kwargs,
+                    ip_adapter_masks=ip_adapter_masks,
                     image_only_indicator=image_only_indicator,
                 )
             else:

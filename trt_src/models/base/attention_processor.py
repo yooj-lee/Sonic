@@ -2756,7 +2756,7 @@ class IPAdapterAttnProcessor2_0(torch.nn.Module):
     ):
         residual = hidden_states
 
-        # separate ip_hidden_states from encoder_hidden_states
+        # separate ip_hidden_states from encoder_hidden_states -> 이 부분을 고치면 될 것 같긴 한데..
         if encoder_hidden_states is not None:
             if isinstance(encoder_hidden_states, tuple):
                 encoder_hidden_states, ip_hidden_states = encoder_hidden_states
