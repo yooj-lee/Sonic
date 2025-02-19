@@ -137,3 +137,8 @@ tmp_path/
 flagged/
 
 checkpoints/*
+
+# TensorRT-Related
+**/onnx/*
+engine/*
+pytorch_model
