@@ -125,3 +125,41 @@ class Audio2bucketModel(ModelMixin):
         )
 
         return context_tokens
+    
+
+if __name__ == "__main__":
+    import torch
+    import onnx
+    import onnxruntime
+    import numpy as np
+
+    model = Audio2bucketModel(seq_len=50, blocks=1, channels=384, clip_channels=1024, intermediate_dim=1024, output_dim=1, context_tokens=2)
+    audio_embeds = torch.randn(2, 25, 50, 1, 384)
+    clip_embeds = torch.randn(50, 1024)
+    torch_out = model(audio_embeds, clip_embeds)
+
+    # # onnx 변환
+    torch.onnx.export(
+        model,
+        (audio_embeds, clip_embeds),
+        "audio_bucket.onnx",
+        input_names=["audio_embeds", "clip_embeds"],
+        output_names=["output"],
+        # dynamo = True
+    )
+
+    onnx_model = onnx.load("audio_bucket.onnx")
+    onnx.checker.check_model(onnx_model)
+
+    ort_session = onnxruntime.InferenceSession("audio_bucket.onnx")
+    
+    def to_numpy(tensor):
+        return tensor.detach().cpu().numpy() if tensor.requires_grad else tensor.cpu().numpy()
+
+    ort_inputs = {ort_session.get_inputs()[0].name: to_numpy(audio_embeds),
+                  ort_session.get_inputs()[1].name: to_numpy(clip_embeds)}
+    ort_outs = ort_session.run(None, ort_inputs)
+
+    np.testing.assert_allclose(to_numpy(torch_out), ort_outs[0], rtol=1e-3, atol=1e-5)
+
+    print("Exported model has been tested with ONNXRuntime, and the result looks good!")

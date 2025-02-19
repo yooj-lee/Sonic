@@ -75,6 +75,7 @@ class SonicPipeline(DiffusionPipeline):
         
         self.vae_scale_factor = 2 ** (len(self.vae.config.block_out_channels) - 1)
 
+        # 이 두 image processor는 사용이 안됨
         self.image_processor = VaeImageProcessor(
             vae_scale_factor=self.vae_scale_factor,
             do_convert_rgb=True)
@@ -85,7 +86,7 @@ class SonicPipeline(DiffusionPipeline):
             do_normalize=False,
         )
 
-
+    # 이게 SVD에서 _encode_image 메소드와 동일한 듯?
     def _clip_encode_image(self, image, audio_prompts, uncond_audio_prompts, num_frames, device, num_videos_per_prompt, do_classifier_free_guidance, frames_per_batch):
         dtype = next(self.image_encoder.parameters()).dtype
 
@@ -97,13 +98,13 @@ class SonicPipeline(DiffusionPipeline):
         bs_embed, seq_len, _ = image_embeddings.shape
         image_embeddings = image_embeddings.repeat(1, num_videos_per_prompt, 1)
         image_embeddings = image_embeddings.view(bs_embed * num_videos_per_prompt, seq_len, -1)
-        
+        # image_embeddings 여기서 num_frames로 확장해줌
         image_embeddings = image_embeddings.unsqueeze(1).repeat((1, num_frames, 1, 1))
         
         if do_classifier_free_guidance:
             negative_image_embeddings = torch.zeros_like(image_embeddings)
 
-            
+            # audio_prompts 추가해서 쓰기
             audio_prompts = torch.stack(audio_prompts, dim=0).to(device=device, dtype=dtype)
             audio_prompts = audio_prompts.unsqueeze(0)
             image_embeddings = torch.cat([negative_image_embeddings, image_embeddings, image_embeddings])
@@ -115,7 +116,7 @@ class SonicPipeline(DiffusionPipeline):
 
             # For classifier free guidance, we need to do two forward passes.
             # Here we concatenate the unconditional and text embeddings into a single batch
-            # to avoid doing two forward passes
+            # to avoid doing two forward passes -> 애초에 이렇게 적어놨구나?
             audio_prompts = torch.cat([uncond_audio_prompts, uncond_audio_prompts, audio_prompts])
 
         return image_embeddings, audio_prompts
@@ -167,7 +168,7 @@ class SonicPipeline(DiffusionPipeline):
         add_time_ids = add_time_ids.repeat(batch_size * num_videos_per_prompt, 1)
 
         if do_classifier_free_guidance:
-            add_time_ids = torch.cat([add_time_ids, add_time_ids, add_time_ids])
+            add_time_ids = torch.cat([add_time_ids, add_time_ids, add_time_ids]) # 이 부분을 왜 두 번?
 
         return add_time_ids
     
@@ -539,10 +540,11 @@ class SonicPipeline(DiffusionPipeline):
                     dtype=self.unet.dtype,
                 ).to(device=latents_all.device)
 
+                # 여기 어차피 overlap set to zero
                 for batch, index_start in enumerate(range(0, num_frames, frames_per_batch - overlap)):
                     self.scheduler._step_index = None
                     index_start -= shift
-                    def indice_slice(tensor, idx_list):
+                    def indice_slice(tensor, idx_list): # 여기서 index slice는 왜 넣는 거지
                         tensor_list = []
                         for idx in idx_list:
                             idx = idx % tensor.shape[1]
@@ -563,7 +565,7 @@ class SonicPipeline(DiffusionPipeline):
                         latent_model_input, 
                         image_latents_input], dim=2)
                     
-                    motion_bucket = indice_slice(motion_buckets, idx_list)
+                    motion_bucket = indice_slice(motion_buckets, idx_list) # idx_list = 0 ~ 24
                     motion_bucket = torch.mean(motion_bucket, dim=1).squeeze()
                     motion_bucket_id = motion_bucket[0]
                     motion_bucket_id_exp = motion_bucket[1]

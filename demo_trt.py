@@ -1,20 +1,12 @@
 import os
-import argparse
-from sonic import Sonic
-pipe = Sonic(0)
+from trt_src.utils.arg_utils import parseArgs
+from sonic_tensorrt import SonicTRT
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--image_path')
-    parser.add_argument('--audio_path')
-    parser.add_argument('--output_path')
-    parser.add_argument('--dynamic_scale', type=float, default=1.0)
-    parser.add_argument('--crop', action='store_true')
-    parser.add_argument('--seed', type=int, default=None)
+    args = parseArgs()
 
-    args = parser.parse_args()
-
-
+    pipe = SonicTRT()
     face_info = pipe.preprocess(args.image_path, expand_ratio=0.5)
     print(face_info)
     if face_info['face_num'] >= 0:

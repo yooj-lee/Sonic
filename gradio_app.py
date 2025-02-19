@@ -16,7 +16,7 @@ def get_video_res(img_path, audio_path, res_video_path, dynamic_scale=1.0):
 
     expand_ratio = 0.5
     min_resolution = 512
-    inference_steps = 25
+    inference_steps = 10
 
     face_info = pipe.preprocess(img_path, expand_ratio=expand_ratio)
     print(face_info)

@@ -37,7 +37,7 @@ from einops import rearrange
 from torch import nn
 
 
-class AudioProjModel(ModelMixin):
+class Audio2bucketModel(ModelMixin):
     """Audio Projection Model
 
     This class defines an audio projection model that takes audio embeddings as input
@@ -70,6 +70,7 @@ class AudioProjModel(ModelMixin):
         seq_len=5,
         blocks=12,  # add a new parameter blocks
         channels=768,  # add a new parameter channels
+        clip_channels=768,  # add a new parameter channels
         intermediate_dim=512,
         output_dim=768,
         context_tokens=32,
@@ -80,7 +81,7 @@ class AudioProjModel(ModelMixin):
         self.blocks = blocks
         self.channels = channels
         self.input_dim = (
-            seq_len * blocks * channels
+            seq_len * blocks * channels + clip_channels
         )  # update input_dim to be the product of blocks and channels.
         self.intermediate_dim = intermediate_dim
         self.context_tokens = context_tokens
@@ -90,10 +91,11 @@ class AudioProjModel(ModelMixin):
         self.proj1 = nn.Linear(self.input_dim, intermediate_dim)
         self.proj2 = nn.Linear(intermediate_dim, intermediate_dim)
         self.proj3 = nn.Linear(intermediate_dim, context_tokens * output_dim)
+        self.act = nn.SiLU()
 
-        self.norm = nn.LayerNorm(output_dim)
+        # self.norm = nn.LayerNorm(output_dim)
 
-    def forward(self, audio_embeds):
+    def forward(self, audio_embeds, clip_embeds):
         """
         Defines the forward pass for the AudioProjModel.
 
@@ -108,52 +110,18 @@ class AudioProjModel(ModelMixin):
         audio_embeds = rearrange(audio_embeds, "bz f w b c -> (bz f) w b c")
         batch_size, window_size, blocks, channels = audio_embeds.shape
         audio_embeds = audio_embeds.view(batch_size, window_size * blocks * channels)
+        audio_embeds = torch.cat([audio_embeds, clip_embeds], dim=-1)
 
-        audio_embeds = torch.relu(self.proj1(audio_embeds))
-        audio_embeds = torch.relu(self.proj2(audio_embeds))
+        audio_embeds = self.act(self.proj1(audio_embeds))
+        audio_embeds = self.act(self.proj2(audio_embeds))
 
         context_tokens = self.proj3(audio_embeds).reshape(
             batch_size, self.context_tokens, self.output_dim
         )
 
-        context_tokens = self.norm(context_tokens)
+        # context_tokens = self.norm(context_tokens)
         context_tokens = rearrange(
             context_tokens, "(bz f) m c -> bz f m c", f=video_length
         )
 
         return context_tokens
-
-if __name__ == "__main__":
-    import torch
-    import onnx
-    import onnxruntime
-    import numpy as np
-
-    model = AudioProjModel(seq_len=10, blocks=5, channels=384, intermediate_dim=1024, output_dim=1024, context_tokens=32)
-    audio_embeds = torch.randn(2, 25, 10, 5, 384)
-    torch_out = model(audio_embeds)
-
-    # # onnx 변환
-    torch.onnx.export(
-        model,
-        (audio_embeds,),
-        "audio_proj.onnx",
-        input_names=["input"],
-        output_names=["output"],
-        # dynamo = True
-    )
-
-    onnx_model = onnx.load("audio_proj.onnx")
-    onnx.checker.check_model(onnx_model)
-
-    ort_session = onnxruntime.InferenceSession("audio_proj.onnx")
-    
-    def to_numpy(tensor):
-        return tensor.detach().cpu().numpy() if tensor.requires_grad else tensor.cpu().numpy()
-
-    ort_inputs = {ort_session.get_inputs()[0].name: to_numpy(audio_embeds)}
-    ort_outs = ort_session.run(None, ort_inputs)
-
-    np.testing.assert_allclose(to_numpy(torch_out), ort_outs[0], rtol=1e-3, atol=1e-5)
-
-    print("Exported model has been tested with ONNXRuntime, and the result looks good!")

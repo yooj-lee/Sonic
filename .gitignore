@@ -135,3 +135,10 @@ dmypy.json
 res_path/
 tmp_path/
 flagged/
+
+checkpoints/*
+
+# TensorRT-Related
+**/onnx/*
+engine/*
+pytorch_model

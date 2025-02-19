@@ -122,38 +122,3 @@ class AudioProjModel(ModelMixin):
         )
 
         return context_tokens
-
-if __name__ == "__main__":
-    import torch
-    import onnx
-    import onnxruntime
-    import numpy as np
-
-    model = AudioProjModel(seq_len=10, blocks=5, channels=384, intermediate_dim=1024, output_dim=1024, context_tokens=32)
-    audio_embeds = torch.randn(2, 25, 10, 5, 384)
-    torch_out = model(audio_embeds)
-
-    # # onnx 변환
-    torch.onnx.export(
-        model,
-        (audio_embeds,),
-        "audio_proj.onnx",
-        input_names=["input"],
-        output_names=["output"],
-        # dynamo = True
-    )
-
-    onnx_model = onnx.load("audio_proj.onnx")
-    onnx.checker.check_model(onnx_model)
-
-    ort_session = onnxruntime.InferenceSession("audio_proj.onnx")
-    
-    def to_numpy(tensor):
-        return tensor.detach().cpu().numpy() if tensor.requires_grad else tensor.cpu().numpy()
-
-    ort_inputs = {ort_session.get_inputs()[0].name: to_numpy(audio_embeds)}
-    ort_outs = ort_session.run(None, ort_inputs)
-
-    np.testing.assert_allclose(to_numpy(torch_out), ort_outs[0], rtol=1e-3, atol=1e-5)
-
-    print("Exported model has been tested with ONNXRuntime, and the result looks good!")
